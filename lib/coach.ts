@@ -246,6 +246,21 @@ async function groq(prompt:string){
   }catch{return null}
 }
 
+
+async function osmProxy(prompt:string):Promise<AiCoachResult|null>{
+  try{
+    const res=await fetch('https://osm-ai-coach-pro-cloud-v4.vercel.app/api/game-coach',{
+      method:'POST',
+      headers:{'content-type':'application/json','x-game-ai-coach':'central-coach-v1'},
+      body:JSON.stringify({prompt})
+    });
+    if(!res.ok)return null;
+    const d:any=await res.json();
+    const parsed=d?.data;
+    return parsed?normalize(parsed,`OSM ${d.provider||'AI'}`,d.model):null;
+  }catch{return null}
+}
+
 function noAi(p:ObservationPayload):AiCoachResult{
   const local=p.localSummary||{};
   return {
@@ -259,7 +274,7 @@ function noAi(p:ObservationPayload):AiCoachResult{
 
 export async function analyzeObservation(p:ObservationPayload,web:WebIntel[]=[]){
   const prompt=buildPrompt(p,web);
-  const ai=await gemini(prompt)||await groq(prompt)||noAi(p);
+  const ai=await gemini(prompt)||await groq(prompt)||await osmProxy(prompt)||noAi(p);
   return {
     ok:true,game:p.game,sessionId:p.sessionId||null,screens:p.screens||0,
     uniqueLines:[...new Set((p.lines||[]).map(String))].length,
