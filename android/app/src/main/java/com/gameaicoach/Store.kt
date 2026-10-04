@@ -52,6 +52,23 @@ object Store {
         return runCatching { JSONObject(raw) }.getOrNull()
     }
 
+    fun loadRawLines(context: Context, game: String): List<String> {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("${gameKey(game)}_lines", "[]") ?: "[]"
+        val arr = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val s = arr.optString(i).trim()
+                if (s.isNotBlank()) add(s)
+            }
+        }
+    }
+
+    fun loadPreviousSummary(context: Context, game: String): JSONObject? {
+        val h = loadHistory(context, game)
+        if (h.length() < 2) return null
+        return h.optJSONObject(h.length() - 2)
+    }
+
     fun loadHistory(context: Context, game: String): JSONArray {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("${gameKey(game)}_history", "[]") ?: "[]"
         return runCatching { JSONArray(raw) }.getOrDefault(JSONArray())

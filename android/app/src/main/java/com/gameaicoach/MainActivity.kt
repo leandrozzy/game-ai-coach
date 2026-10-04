@@ -13,7 +13,14 @@ import android.view.*
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 class MainActivity:AppCompatActivity(){
  private lateinit var gameSpinner:Spinner
@@ -21,9 +28,11 @@ class MainActivity:AppCompatActivity(){
  private lateinit var status:TextView
  private lateinit var start:Button
  private lateinit var stop:Button
+ private lateinit var reanalyze:Button
  private val games=listOf("Marvel Strike Force","Saint Seiya Awakening","F1 Clash")
  private val blue=Color.rgb(45,122,255);private val bg=Color.rgb(7,13,23);private val panel=Color.rgb(16,27,44)
  private val muted=Color.rgb(148,163,184);private val green=Color.rgb(92,224,144);private val amber=Color.rgb(255,190,92)
+ private val vercel="https://game-ai-coach-indol.vercel.app"
 
  private val projectionLauncher=registerForActivityResult(ActivityResultContracts.StartActivityForResult()){r->
   if(r.resultCode==Activity.RESULT_OK&&r.data!=null){
@@ -51,7 +60,7 @@ class MainActivity:AppCompatActivity(){
   gameSpinner.setSelection(games.indexOf(Store.loadActiveGame(this)).coerceAtLeast(0))
   gameSpinner.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
    override fun onNothingSelected(p:android.widget.AdapterView<*>?){}
-   override fun onItemSelected(p:android.widget.AdapterView<*>?,v:View?,pos:Int,id:Long){Store.saveActiveGame(this@MainActivity,games[pos]);render()}
+   override fun onItemSelected(p:android.widget.AdapterView<*>?,v:View?,pos:Int,id:Long){Store.saveActiveGame(this@MainActivity,games[pos]);refresh()}
   }
   root.addView(card(gameSpinner,Color.rgb(20,33,53)))
   status=txt("",13f,true);root.addView(status)
@@ -64,36 +73,94 @@ class MainActivity:AppCompatActivity(){
    Toast.makeText(this@MainActivity,"Gerando seu plano…",Toast.LENGTH_SHORT).show();poll(g)
   }}
   row.addView(start,LinearLayout.LayoutParams(0,-2,1f).apply{marginEnd=7});row.addView(stop,LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=7})
-  root.addView(row);root.addView(space(14))
+  root.addView(row)
+
+  reanalyze=button("↻ REANALISAR ÚLTIMA SESSÃO",Color.rgb(39,154,117)).apply{
+   setOnClickListener{reanalyzeLastSession()}
+  }
+  root.addView(reanalyze,LinearLayout.LayoutParams(-1,-2).apply{topMargin=10})
+  root.addView(space(14))
+
   content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};root.addView(content)
   setContentView(scroll)
+ }
+
+ private fun reanalyzeLastSession(){
+  val game=gameSpinner.selectedItem.toString()
+  val lines=Store.loadRawLines(this,game)
+  val local=Store.loadSummary(this,game)
+  if(lines.isEmpty()||local==null){
+   Toast.makeText(this,"Ainda não existe uma sessão salva para este jogo.",Toast.LENGTH_LONG).show();return
+  }
+  Store.saveServerAnalysis(this,game,JSONObject().put("pending",true))
+  refresh()
+  Toast.makeText(this,"Reanalisando a sessão já salva — não precisa abrir o jogo.",Toast.LENGTH_SHORT).show()
+
+  val payload=JSONObject().apply{
+   put("game",game)
+   put("sessionId","reanalyze-"+UUID.randomUUID().toString())
+   put("screens",local.optInt("frames",0))
+   put("lines",JSONArray(lines.take(2500)))
+   put("localSummary",local)
+   Store.loadPreviousSummary(this@MainActivity,game)?.let{put("previousSummary",it)}
+  }
+
+  val req=Request.Builder().url("$vercel/api/observe")
+   .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
+
+  OkHttpClient.Builder().callTimeout(45,TimeUnit.SECONDS).build().newCall(req).enqueue(object:Callback{
+   override fun onFailure(c:Call,e:IOException){
+    runOnUiThread{
+     Store.saveServerAnalysis(this@MainActivity,game,JSONObject().put("ok",false).put("pending",false).put("error","Não foi possível consultar a IA agora. A sessão continua salva."))
+     refresh();Toast.makeText(this@MainActivity,"Falha ao reanalisar. A sessão foi preservada.",Toast.LENGTH_LONG).show()
+    }
+   }
+   override fun onResponse(c:Call,r:Response){
+    val body=r.body?.string().orEmpty()
+    runOnUiThread{
+     if(r.isSuccessful){
+      runCatching{Store.saveServerAnalysis(this@MainActivity,game,JSONObject(body))}
+       .onFailure{Store.saveServerAnalysis(this@MainActivity,game,JSONObject().put("ok",false).put("pending",false).put("error","Resposta da IA inválida."))}
+     }else Store.saveServerAnalysis(this@MainActivity,game,JSONObject().put("ok",false).put("pending",false).put("error","Servidor respondeu HTTP ${r.code}."))
+     refresh()
+     Toast.makeText(this@MainActivity,if(r.isSuccessful)"Plano reanalisado." else "Reanálise não concluída.",Toast.LENGTH_SHORT).show()
+    }
+    r.close()
+   }
+  })
+  poll(game)
  }
 
  private fun poll(game:String){
   var tries=0;val h=Handler(Looper.getMainLooper())
   val r=object:Runnable{override fun run(){tries++;refresh();val s=Store.loadServerAnalysis(this@MainActivity,game)
-   if(s!=null&&!s.optBoolean("pending",false)){Toast.makeText(this@MainActivity,"Plano atualizado.",Toast.LENGTH_SHORT).show();return}
-   if(tries<35)h.postDelayed(this,1200)else Toast.makeText(this@MainActivity,"Sessão salva. A análise aparecerá ao reabrir.",Toast.LENGTH_LONG).show()
+   if(s!=null&&!s.optBoolean("pending",false))return
+   if(tries<35)h.postDelayed(this,1200)
   }};h.postDelayed(r,900)
  }
 
  private fun refresh(){
   val active=Store.isCaptureActive(this);status.text=if(active)"● COACH ATIVO — jogue normalmente" else "● PRONTO"
-  status.setTextColor(if(active)green else muted);start.isEnabled=!active;stop.isEnabled=active;render()
+  status.setTextColor(if(active)green else muted);start.isEnabled=!active;stop.isEnabled=active
+  if(::reanalyze.isInitialized){
+   val game=gameSpinner.selectedItem?.toString()?:Store.loadActiveGame(this)
+   reanalyze.isEnabled=!active&&Store.loadRawLines(this,game).isNotEmpty()
+  }
+  render()
  }
 
  private fun render(){
   if(!::content.isInitialized)return;content.removeAllViews()
   val game=gameSpinner.selectedItem?.toString()?:Store.loadActiveGame(this)
   val local=Store.loadSummary(this,game);val server=Store.loadServerAnalysis(this,game)
-  if(server?.optBoolean("pending",false)==true){hero("ANALISANDO","Cruzando sua conta, sessão anterior e informações atuais…",blue);diagnostic(local);return}
+  if(server?.optBoolean("pending",false)==true){hero("ANALISANDO","Usando a sessão salva para recalcular seu plano…",blue);diagnostic(local);return}
   if(server?.optString("error")?.isNotBlank()==true){hero("SESSÃO SALVA",server.optString("error"),amber);diagnostic(local);return}
 
   val connected=CoachEngine.connected(server)
   val headline=CoachEngine.headline(server)
   if(!connected){
    hero(if(headline.isBlank())"COACH AINDA SEM IA" else headline,CoachEngine.summary(server).ifBlank{"Faça uma sessão para gerar seu primeiro plano."},amber)
-   if(server!=null) smallCard("AÇÃO NECESSÁRIA","O leitor está funcionando, mas o Vercel precisa da mesma GEMINI_API_KEY ou GROQ_API_KEY usada no OSM.")
+   if(local!=null) smallCard("VOCÊ NÃO PRECISA JOGAR DE NOVO","Use REANALISAR ÚLTIMA SESSÃO depois que o backend do OSM estiver pronto.")
    diagnostic(local);return
   }
 
