@@ -2,7 +2,7 @@ import {NextRequest,NextResponse} from 'next/server';
 import {analyzeObservation,fetchWebIntel,ObservationPayload} from '../../../lib/coach';
 
 export const runtime='nodejs';
-export const maxDuration=30;
+export const maxDuration=45;
 
 export async function POST(req:NextRequest){
   try{
@@ -17,5 +17,11 @@ export async function POST(req:NextRequest){
 }
 
 export async function GET(){
-  return NextResponse.json({ok:true,service:'Game AI Coach Observe API',version:'1.1.0',ai:{openrouter:!!process.env.OPENROUTER_API_KEY,groq:!!process.env.GROQ_API_KEY,gemini:!!process.env.GEMINI_API_KEY}});
+  return NextResponse.json({
+    ok:true,service:'Game AI Coach',version:'2.0.0',
+    ai:{
+      gemini:!!process.env.GEMINI_API_KEY,
+      groq:!!process.env.GROQ_API_KEY
+    }
+  });
 }
