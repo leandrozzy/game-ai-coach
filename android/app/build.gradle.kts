@@ -1,7 +1,7 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
  namespace="com.gameaicoach"; compileSdk=35
- defaultConfig { applicationId="com.gameaicoach"; minSdk=26; targetSdk=35; versionCode=12; versionName="1.1.0" }
+ defaultConfig { applicationId="com.gameaicoach"; minSdk=26; targetSdk=35; versionCode=20; versionName="2.0.0" }
  signingConfigs {
   create("coach") {
    storeFile=file("../coach-release.keystore")
