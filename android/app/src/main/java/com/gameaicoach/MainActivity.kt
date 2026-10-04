@@ -165,11 +165,37 @@ class MainActivity:AppCompatActivity(){
 
     private fun launchSelectedGame(name:String){
         val pm=packageManager
-        val candidates=pm.getInstalledApplications(PackageManager.GET_META_DATA)
-        val keys=when{name.startsWith("Saint")->listOf("saint seiya","awakening");name.startsWith("Marvel")->listOf("marvel strike force","strike force");else->listOf("f1 clash","f1")}
-        val app=candidates.firstOrNull{a->val label=pm.getApplicationLabel(a).toString().lowercase();keys.any{label.contains(it)}}
-        if(app!=null){pm.getLaunchIntentForPackage(app.packageName)?.let{startActivity(it);return}}
-        Toast.makeText(this,"Não encontrei o jogo automaticamente. Abra-o normalmente; o Coach continua ativo.",Toast.LENGTH_LONG).show()
+        val packageName=when{
+            name.startsWith("Marvel")->"com.foxnextgames.m3"
+            name.startsWith("Saint")->"com.tencent.tmgp.sskeus"
+            else->"com.hutchgames.formularacing"
+        }
+
+        pm.getLaunchIntentForPackage(packageName)?.let{
+            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(it)
+            return
+        }
+
+        // Fallback apenas se a variante instalada usar outro package name.
+        val keys=when{
+            name.startsWith("Saint")->listOf("saint seiya","awakening")
+            name.startsWith("Marvel")->listOf("marvel strike force","strike force")
+            else->listOf("f1 clash")
+        }
+        val app=pm.getInstalledApplications(PackageManager.GET_META_DATA).firstOrNull{a->
+            val label=pm.getApplicationLabel(a).toString().lowercase()
+            keys.any{label.contains(it)}
+        }
+        if(app!=null){
+            pm.getLaunchIntentForPackage(app.packageName)?.let{
+                it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(it)
+                return
+            }
+        }
+
+        Toast.makeText(this,"${name} não foi encontrado instalado neste aparelho. O Coach continua ativo.",Toast.LENGTH_LONG).show()
     }
 
     private fun sectionTitle(t:String)=text(t,13f,true,Color.rgb(125,147,177)).apply{setPadding(2,20,0,8)}
