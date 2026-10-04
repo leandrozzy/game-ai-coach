@@ -3,48 +3,40 @@ package com.gameaicoach
 import org.json.JSONObject
 
 object CoachEngine {
-    fun buildToday(summary: JSONObject?, server: JSONObject?): List<String> {
-        val out = mutableListOf<String>()
-        val ai = server?.optJSONObject("ai")
-        val actions = ai?.optJSONArray("actions")
-        if (actions != null) for (i in 0 until minOf(actions.length(), 6)) {
-            val s = actions.optString(i).trim()
-            if (s.isNotBlank()) out.add(s)
-        }
-        if (out.isEmpty()) {
-            val recs = summary?.optJSONArray("recommendations")
-            if (recs != null) for (i in 0 until minOf(recs.length(), 5)) out.add(recs.optString(i))
-        }
-        if (out.isEmpty()) out.add("Inicie o Coach e jogue normalmente. Após finalizar, a IA cruza sua conta com informações atuais e cria prioridades.")
-        return out.take(6)
-    }
+ fun ai(server:JSONObject?)=server?.optJSONObject("ai")
+ fun connected(server:JSONObject?)=ai(server)?.optBoolean("connected",false)==true
+ fun headline(server:JSONObject?)=ai(server)?.optString("headline")?.trim().orEmpty()
+ fun summary(server:JSONObject?)=ai(server)?.optString("accountSummary")?.trim().orEmpty()
+ fun provider(server:JSONObject?)=ai(server)?.optString("provider")?.trim().orEmpty()
+ fun confidence(server:JSONObject?)=ai(server)?.optInt("confidence",0)?:0
 
-    fun aiSummary(server: JSONObject?): String = server?.optJSONObject("ai")?.optString("accountSummary")?.trim().orEmpty()
-    fun aiConfidence(server: JSONObject?): Int = server?.optJSONObject("ai")?.optInt("confidence",0) ?: 0
-    fun aiProvider(server: JSONObject?): String = server?.optJSONObject("ai")?.optString("provider")?.trim().orEmpty()
-
-    fun aiList(server: JSONObject?, key: String, max: Int = 6): List<String> {
-        val arr = server?.optJSONObject("ai")?.optJSONArray(key) ?: return emptyList()
-        val out = mutableListOf<String>()
-        for (i in 0 until minOf(arr.length(), max)) {
-            val s = arr.optString(i).trim()
-            if (s.isNotBlank()) out.add(s)
-        }
-        return out
-    }
-
-    fun coverageText(summary: JSONObject?): String = if (summary == null) "0%" else "${summary.optInt("coveragePercent",0)}%"
-    fun entityCount(summary: JSONObject?): Int = summary?.optJSONArray("entities")?.length() ?: 0
-    fun newEntityCount(summary: JSONObject?): Int = summary?.optInt("newEntities",0) ?: 0
-
-    fun coverageDetails(summary: JSONObject?): List<Pair<String,Boolean>> {
-        val obj = summary?.optJSONObject("coverage") ?: return emptyList()
-        val out = mutableListOf<Pair<String,Boolean>>()
-        val keys = obj.keys()
-        while (keys.hasNext()) {
-            val k = keys.next()
-            out.add(k to obj.optBoolean(k,false))
-        }
-        return out
-    }
+ fun plan(server:JSONObject?):List<JSONObject>{
+  val a=ai(server)?.optJSONArray("planToday")?:return emptyList()
+  return (0 until minOf(a.length(),7)).mapNotNull{a.optJSONObject(it)}
+ }
+ fun upgrades(server:JSONObject?):List<JSONObject>{
+  val a=ai(server)?.optJSONArray("upgrades")?:return emptyList()
+  return (0 until minOf(a.length(),8)).mapNotNull{a.optJSONObject(it)}
+ }
+ fun teams(server:JSONObject?):List<JSONObject>{
+  val a=ai(server)?.optJSONArray("teams")?:return emptyList()
+  return (0 until minOf(a.length(),6)).mapNotNull{a.optJSONObject(it)}
+ }
+ fun units(server:JSONObject?):List<JSONObject>{
+  val a=ai(server)?.optJSONArray("units")?:return emptyList()
+  return (0 until minOf(a.length(),18)).mapNotNull{a.optJSONObject(it)}
+ }
+ fun resources(server:JSONObject?):List<JSONObject>{
+  val a=ai(server)?.optJSONArray("resources")?:return emptyList()
+  return (0 until minOf(a.length(),10)).mapNotNull{a.optJSONObject(it)}
+ }
+ fun objects(server:JSONObject?,key:String,max:Int=8):List<JSONObject>{
+  val a=ai(server)?.optJSONArray(key)?:return emptyList()
+  return (0 until minOf(a.length(),max)).mapNotNull{a.optJSONObject(it)}
+ }
+ fun strings(server:JSONObject?,key:String,max:Int=8):List<String>{
+  val a=ai(server)?.optJSONArray(key)?:return emptyList()
+  return (0 until minOf(a.length(),max)).mapNotNull{a.optString(it).trim().takeIf(String::isNotBlank)}
+ }
+ fun coverage(summary:JSONObject?)="${summary?.optInt("coveragePercent",0)?:0}%"
 }
