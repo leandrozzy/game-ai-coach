@@ -5,102 +5,20 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object Store {
-    private const val PREFS = "coach"
-
-    fun saveSession(context: Context, game: String, summary: JSONObject, rawLines: List<String>, frames: Int) {
-        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val key = gameKey(game)
-        val previous = p.getString("${key}_summary", null)?.let { runCatching { JSONObject(it) }.getOrNull() }
-        val prevEntities = previous?.optJSONArray("entities")?.let { arr ->
-            buildSet { for (i in 0 until arr.length()) add(arr.optString(i)) }
-        } ?: emptySet()
-        val entities = summary.optJSONArray("entities") ?: JSONArray()
-        var newEntities = 0
-        for (i in 0 until entities.length()) if (!prevEntities.contains(entities.optString(i))) newEntities++
-        summary.put("newEntities", newEntities)
-        summary.put("frames", frames)
-        summary.put("savedAt", System.currentTimeMillis())
-        val history = loadHistory(context, game)
-        history.put(summary)
-        while (history.length() > 20) {
-            val compact = JSONArray()
-            for (i in 1 until history.length()) compact.put(history.get(i))
-            p.edit().putString("${key}_history", compact.toString()).apply()
-            return saveSessionAfterTrim(context, game, summary, rawLines, frames, compact)
-        }
-        p.edit()
-            .putString("${key}_summary", summary.toString())
-            .putString("${key}_history", history.toString())
-            .putString("${key}_lines", JSONArray(rawLines.take(2500)).toString())
-            .putString("lastGame", game)
-            .apply()
-    }
-
-    private fun saveSessionAfterTrim(context: Context, game: String, summary: JSONObject, rawLines: List<String>, frames: Int, history: JSONArray) {
-        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val key = gameKey(game)
-        p.edit()
-            .putString("${key}_summary", summary.toString())
-            .putString("${key}_history", history.toString())
-            .putString("${key}_lines", JSONArray(rawLines.take(2500)).toString())
-            .putString("lastGame", game)
-            .apply()
-    }
-
-    fun loadSummary(context: Context, game: String): JSONObject? {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("${gameKey(game)}_summary", null) ?: return null
-        return runCatching { JSONObject(raw) }.getOrNull()
-    }
-
-    fun loadRawLines(context: Context, game: String): List<String> {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("${gameKey(game)}_lines", "[]") ?: "[]"
-        val arr = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
-        return buildList {
-            for (i in 0 until arr.length()) {
-                val s = arr.optString(i).trim()
-                if (s.isNotBlank()) add(s)
-            }
-        }
-    }
-
-    fun loadPreviousSummary(context: Context, game: String): JSONObject? {
-        val h = loadHistory(context, game)
-        if (h.length() < 2) return null
-        return h.optJSONObject(h.length() - 2)
-    }
-
-    fun loadHistory(context: Context, game: String): JSONArray {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("${gameKey(game)}_history", "[]") ?: "[]"
-        return runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
-    }
-
-    fun saveServerAnalysis(context: Context, game: String, json: JSONObject) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString("${gameKey(game)}_server", json.toString())
-            .apply()
-    }
-
-    fun loadServerAnalysis(context: Context, game: String): JSONObject? {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("${gameKey(game)}_server", null) ?: return null
-        return runCatching { JSONObject(raw) }.getOrNull()
-    }
-
-    fun saveActiveGame(context: Context, game: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("activeGame", game).apply()
-    }
-
-    fun loadActiveGame(context: Context): String = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        .getString("activeGame", "Marvel Strike Force") ?: "Marvel Strike Force"
-
-    fun setCaptureActive(context: Context, active: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("captureActive", active).apply()
-    }
-
-    fun isCaptureActive(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("captureActive", false)
-
-    private fun gameKey(game: String): String = when {
-        game.startsWith("Saint") -> "ssa"
-        game.startsWith("Marvel") -> "msf"
-        else -> "f1"
-    }
+ private const val PREFS="coach"
+ fun saveApiKeys(context:Context,google:String,groq:String){context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString("api_google",google.trim()).putString("api_groq",groq.trim()).apply()}
+ fun hasApiKeys(context:Context):Boolean{val p=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE);return !p.getString("api_google","").isNullOrBlank()||!p.getString("api_groq","").isNullOrBlank()}
+ fun apiKeysJson(context:Context)=JSONObject().apply{val p=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE);val g=p.getString("api_google","")?:"";val q=p.getString("api_groq","")?:"";if(g.isNotBlank())put("google",g);if(q.isNotBlank())put("groq",q)}
+ fun saveSession(context:Context,game:String,summary:JSONObject,rawLines:List<String>,frames:Int){val p=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE);val key=gameKey(game);summary.put("frames",frames).put("savedAt",System.currentTimeMillis());val h=loadHistory(context,game);h.put(summary);p.edit().putString("${key}_summary",summary.toString()).putString("${key}_history",h.toString()).putString("${key}_lines",JSONArray(rawLines.take(2500)).toString()).apply()}
+ fun loadSummary(context:Context,game:String):JSONObject?{val r=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString("${gameKey(game)}_summary",null)?:return null;return runCatching{JSONObject(r)}.getOrNull()}
+ fun loadRawLines(context:Context,game:String):List<String>{val r=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString("${gameKey(game)}_lines","[]")?:"[]";val a=runCatching{JSONArray(r)}.getOrDefault(JSONArray());return buildList{for(i in 0 until a.length()){val s=a.optString(i).trim();if(s.isNotBlank())add(s)}}}
+ fun loadPreviousSummary(context:Context,game:String):JSONObject?{val h=loadHistory(context,game);return if(h.length()>=2)h.optJSONObject(h.length()-2) else null}
+ fun loadHistory(context:Context,game:String):JSONArray{val r=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString("${gameKey(game)}_history","[]")?:"[]";return runCatching{JSONArray(r)}.getOrDefault(JSONArray())}
+ fun saveServerAnalysis(context:Context,game:String,json:JSONObject){context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString("${gameKey(game)}_server",json.toString()).apply()}
+ fun loadServerAnalysis(context:Context,game:String):JSONObject?{val r=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString("${gameKey(game)}_server",null)?:return null;return runCatching{JSONObject(r)}.getOrNull()}
+ fun saveActiveGame(context:Context,game:String){context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putString("activeGame",game).apply()}
+ fun loadActiveGame(context:Context)=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString("activeGame","Marvel Strike Force")?:"Marvel Strike Force"
+ fun setCaptureActive(context:Context,active:Boolean){context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit().putBoolean("captureActive",active).apply()}
+ fun isCaptureActive(context:Context)=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean("captureActive",false)
+ private fun gameKey(game:String)=when{game.startsWith("Saint")->"ssa";game.startsWith("Marvel")->"msf";else->"f1"}
 }
