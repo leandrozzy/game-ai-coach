@@ -50,6 +50,7 @@ class MainActivity:AppCompatActivity(){
   super.onCreate(b)
   if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),2)
   handleImportIntent(intent)
+  Store.migrateLegacyIfNeeded(this,Store.loadActiveGame(this))
   buildUi();refresh()
  }
 
@@ -85,7 +86,7 @@ class MainActivity:AppCompatActivity(){
   gameSpinner.setSelection(games.indexOf(Store.loadActiveGame(this)).coerceAtLeast(0))
   gameSpinner.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
    override fun onNothingSelected(p:android.widget.AdapterView<*>?){}
-   override fun onItemSelected(p:android.widget.AdapterView<*>?,v:View?,pos:Int,id:Long){Store.saveActiveGame(this@MainActivity,games[pos]);refresh()}
+   override fun onItemSelected(p:android.widget.AdapterView<*>?,v:View?,pos:Int,id:Long){Store.saveActiveGame(this@MainActivity,games[pos]);Store.migrateLegacyIfNeeded(this@MainActivity,games[pos]);refresh()}
   }
   root.addView(card(gameSpinner,Color.rgb(20,33,53)))
   status=txt("",13f,true);root.addView(status)
@@ -119,10 +120,16 @@ class MainActivity:AppCompatActivity(){
 
  private fun reanalyzeLastSession(){
   val game=gameSpinner.selectedItem.toString()
+  Store.migrateLegacyIfNeeded(this,game)
   val lines=Store.loadRawLines(this,game);val local=Store.loadSummary(this,game)
-  if(lines.isEmpty()||local==null){Toast.makeText(this,"Ainda não existe uma sessão salva para este jogo.",Toast.LENGTH_LONG).show();return}
+  if(lines.isEmpty()||local==null){
+   Toast.makeText(this,"Nenhuma sessão salva foi encontrada nesta instalação. Faça uma coleta; ela ficará preservada nas próximas versões.",Toast.LENGTH_LONG).show()
+   return
+  }
   if(!Store.hasApiKeys(this)){Toast.makeText(this,"Importe as APIs do OSM primeiro.",Toast.LENGTH_LONG).show();return}
   Store.saveServerAnalysis(this,game,JSONObject().put("pending",true));refresh()
+  Toast.makeText(this,"Reanalisando ${lines.size} linhas já salvas…",Toast.LENGTH_SHORT).show()
+
   val payload=JSONObject().apply{
    put("game",game);put("sessionId","reanalyze-"+UUID.randomUUID().toString());put("screens",local.optInt("frames",0))
    put("lines",JSONArray(lines.take(2500)));put("localSummary",local);Store.loadPreviousSummary(this@MainActivity,game)?.let{put("previousSummary",it)}
@@ -132,7 +139,7 @@ class MainActivity:AppCompatActivity(){
   OkHttpClient.Builder().callTimeout(45,TimeUnit.SECONDS).build().newCall(req).enqueue(object:Callback{
    override fun onFailure(c:Call,e:IOException){runOnUiThread{
     Store.saveServerAnalysis(this@MainActivity,game,JSONObject().put("ok",false).put("pending",false).put("error","Não foi possível consultar a IA agora."))
-    refresh()
+    refresh();Toast.makeText(this@MainActivity,"Falha ao reanalisar.",Toast.LENGTH_LONG).show()
    }}
    override fun onResponse(c:Call,r:Response){
     val body=r.body?.string().orEmpty()
@@ -140,6 +147,7 @@ class MainActivity:AppCompatActivity(){
      if(r.isSuccessful)runCatching{Store.saveServerAnalysis(this@MainActivity,game,JSONObject(body))}
      else Store.saveServerAnalysis(this@MainActivity,game,JSONObject().put("ok",false).put("pending",false).put("error","Servidor respondeu HTTP ${r.code}."))
      refresh()
+     Toast.makeText(this@MainActivity,if(r.isSuccessful)"Plano atualizado." else "Reanálise não concluída.",Toast.LENGTH_SHORT).show()
     };r.close()
    }
   })
@@ -151,7 +159,7 @@ class MainActivity:AppCompatActivity(){
  private fun refresh(){
   val active=Store.isCaptureActive(this);status.text=if(active)"● COACH ATIVO — jogue normalmente" else "● PRONTO"
   status.setTextColor(if(active)green else muted);start.isEnabled=!active;stop.isEnabled=active
-  if(::reanalyze.isInitialized){val game=gameSpinner.selectedItem?.toString()?:Store.loadActiveGame(this);reanalyze.isEnabled=!active&&Store.loadRawLines(this,game).isNotEmpty()}
+  if(::reanalyze.isInitialized)reanalyze.isEnabled=!active
   if(::importKeys.isInitialized)importKeys.text=if(Store.hasApiKeys(this))"✓ APIs DO OSM CONECTADAS" else "⇩ IMPORTAR APIs DO OSM"
   render()
  }
@@ -159,12 +167,13 @@ class MainActivity:AppCompatActivity(){
  private fun render(){
   if(!::content.isInitialized)return;content.removeAllViews()
   val game=gameSpinner.selectedItem?.toString()?:Store.loadActiveGame(this)
+  Store.migrateLegacyIfNeeded(this,game)
   val local=Store.loadSummary(this,game);val server=Store.loadServerAnalysis(this,game)
   if(!Store.hasApiKeys(this)){hero("CONECTE AS APIs DO OSM","Toque em IMPORTAR APIs DO OSM. O OSM abre, lê as chaves já salvas e volta automaticamente.",amber);diagnostic(local);return}
   if(server?.optBoolean("pending",false)==true){hero("ANALISANDO","Recalculando seu plano com IA…",blue);diagnostic(local);return}
   if(server?.optString("error")?.isNotBlank()==true){hero("SESSÃO SALVA",server.optString("error"),amber);diagnostic(local);return}
   val connected=CoachEngine.connected(server);val headline=CoachEngine.headline(server)
-  if(!connected){hero(if(headline.isBlank())"PRONTO PARA ANALISAR" else headline,CoachEngine.summary(server).ifBlank{"Use REANALISAR ÚLTIMA SESSÃO."},amber);diagnostic(local);return}
+  if(!connected){hero(if(headline.isBlank())"PRONTO PARA ANALISAR" else headline,CoachEngine.summary(server).ifBlank{if(local==null)"Nenhuma sessão salva nesta instalação." else "Use REANALISAR ÚLTIMA SESSÃO."},amber);diagnostic(local);return}
   hero(headline.ifBlank{"Plano atualizado"},CoachEngine.summary(server),green)
   val meta=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
   meta.addView(stat("CONFIANÇA","${CoachEngine.confidence(server)}%"),LinearLayout.LayoutParams(0,-2,1f).apply{marginEnd=5})
