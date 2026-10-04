@@ -6,25 +6,38 @@ export type ObservationPayload={
   startedAt?:string;
   endedAt?:string;
   localSummary?:any;
+  previousSummary?:any;
 };
 
 export type WebIntel={title:string;url:string;snippet:string};
+export type AiCoachResult={
+  provider:string;
+  model?:string;
+  confidence:number;
+  accountSummary:string;
+  actions:string[];
+  avoid:string[];
+  teams:string[];
+  changes:string[];
+  gaps:string[];
+  webFindings:string[];
+};
 
 const gameQueries:Record<string,string[]>={
   'Marvel Strike Force':[
-    'Marvel Strike Force latest meta events codes guides 2026',
-    'site:youtube.com Marvel Strike Force guide roster raid arena 2026',
-    'Marvel Strike Force redeem codes events rewards 2026'
+    'Marvel Strike Force current meta raid arena crucible teams latest',
+    'Marvel Strike Force current events rewards codes latest',
+    'Marvel Strike Force best characters gear iso t4 guide current'
   ],
   'Saint Seiya Awakening':[
-    'Saint Seiya Awakening Knights of the Zodiac latest events codes meta guides 2026',
-    'site:youtube.com Saint Seiya Awakening guide cosmos team 2026',
-    'Saint Seiya Awakening gift codes rewards 2026'
+    'Saint Seiya Awakening current meta teams cosmos guide latest',
+    'Saint Seiya Awakening current events codes rewards latest',
+    'Saint Seiya Awakening best saints skill cosmos pve pvp guide current'
   ],
   'F1 Clash':[
-    'F1 Clash latest events best drivers components guide 2026',
-    'site:youtube.com F1 Clash best drivers components strategy 2026',
-    'F1 Clash events rewards series guide 2026'
+    'F1 Clash current best drivers components upgrades latest',
+    'F1 Clash current events rewards series strategy latest',
+    'F1 Clash best upgrade priority coins components drivers current'
   ]
 };
 
@@ -34,13 +47,12 @@ export async function fetchWebIntel(game:string):Promise<WebIntel[]> {
   const queries=gameQueries[game]||[`${game} latest guide events codes`];
   const collected:WebIntel[]=[];
   for(const query of queries){
-    const q=encodeURIComponent(query);
-    const url=`https://html.duckduckgo.com/html/?q=${q}`;
     try{
-      const res=await fetch(url,{headers:{'user-agent':'Mozilla/5.0 GameAICoach/1.0'},next:{revalidate:1800}});
+      const url=`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      const res=await fetch(url,{headers:{'user-agent':'Mozilla/5.0 GameAICoach/1.1'},next:{revalidate:900}});
       if(!res.ok) continue;
       const html=await res.text();
-      const blocks=[...html.matchAll(/<div[^>]*class="result[^>]*"[\s\S]*?<\/div>\s*<\/div>/gi)].slice(0,5);
+      const blocks=[...html.matchAll(/<div[^>]*class="result[^>]*"[\s\S]*?<\/div>\s*<\/div>/gi)].slice(0,6);
       for(const m of blocks){
         const b=m[0];
         const am=b.match(/<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
@@ -53,38 +65,98 @@ export async function fetchWebIntel(game:string):Promise<WebIntel[]> {
         if(item.title&&!collected.some(x=>x.url===item.url||x.title===item.title)) collected.push(item);
       }
     }catch{}
-    if(collected.length>=8)break;
+    if(collected.length>=10) break;
   }
-  return collected.length?collected.slice(0,8):fallbackIntel(game);
+  return collected.slice(0,10);
 }
 
-function fallbackIntel(game:string):WebIntel[]{
-  if(game==='Marvel Strike Force')return [
-    {title:'Marvel Strike Force — site oficial',url:'https://marvelstrikeforce.com/',snippet:'Notícias, eventos e informações oficiais do jogo.'},
-    {title:'Marvel Strike Force — comunidade Reddit',url:'https://www.reddit.com/r/MarvelStrikeForce/',snippet:'Discussões da comunidade sobre equipes, eventos e evolução.'}
-  ];
-  if(game==='Saint Seiya Awakening')return [
-    {title:'GTarcade — Saint Seiya Awakening',url:'https://forum.gtarcade.com/',snippet:'Fórum e publicações da GTarcade sobre eventos e guias.'},
-    {title:'Saint Seiya Awakening — comunidade',url:'https://www.reddit.com/search/?q=Saint%20Seiya%20Awakening',snippet:'Discussões recentes da comunidade.'}
-  ];
-  return [
-    {title:'F1 Clash — suporte e notícias',url:'https://hutch.helpshift.com/hc/en/10-f1-clash/',snippet:'Informações oficiais do F1 Clash.'},
-    {title:'F1 Clash — comunidade Reddit',url:'https://www.reddit.com/r/F1Clash/',snippet:'Estratégias e discussões atuais da comunidade.'}
-  ];
+function safeJsonParse(text:string):any|null{
+  const cleaned=text.trim().replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```$/,'').trim();
+  try{return JSON.parse(cleaned)}catch{}
+  const start=cleaned.indexOf('{'), end=cleaned.lastIndexOf('}');
+  if(start>=0&&end>start){try{return JSON.parse(cleaned.slice(start,end+1))}catch{}}
+  return null;
 }
 
-export function analyzeObservation(p:ObservationPayload,webIntel:WebIntel[]=[]){
-  const clean=[...new Set((p.lines||[]).map(x=>String(x).trim()).filter(Boolean))];
-  const local=p.localSummary||{};
-  const recs=Array.isArray(local.recommendations)?local.recommendations:[];
-  const coach:string[]=[];
-  if(local.coveragePercent!=null&&local.coveragePercent<50) coach.push('Continue jogando normalmente: ainda faltam algumas áreas da conta para o Coach mapear com confiança.');
-  if(local.newEntities>0) coach.push(`${local.newEntities} itens ou nomes novos foram detectados desde a sessão anterior.`);
-  recs.slice(0,5).forEach((x:any)=>coach.push(String(x)));
-  if(webIntel.length) coach.push(`Inteligência web atualizada com ${webIntel.length} fontes públicas.`);
+function normalizeAi(raw:any,provider:string,model?:string):AiCoachResult{
+  const arr=(v:any)=>Array.isArray(v)?v.map(String).filter(Boolean).slice(0,8):[];
   return {
-    ok:true,game:p.game,sessionId:p.sessionId||null,screens:p.screens||0,
-    uniqueLines:clean.length,receivedAt:new Date().toISOString(),
-    localSummary:local,coach:coach.slice(0,8),webIntel
+    provider,model,
+    confidence:Math.max(0,Math.min(100,Number(raw?.confidence??60))),
+    accountSummary:String(raw?.accountSummary||raw?.summary||'Sessão analisada.').slice(0,900),
+    actions:arr(raw?.actions),
+    avoid:arr(raw?.avoid),
+    teams:arr(raw?.teams),
+    changes:arr(raw?.changes),
+    gaps:arr(raw?.gaps),
+    webFindings:arr(raw?.webFindings)
   };
+}
+
+function buildPrompt(p:ObservationPayload,webIntel:WebIntel[]){
+  const lines=(p.lines||[]).slice(0,1200);
+  const web=webIntel.slice(0,8).map((x,i)=>`${i+1}. ${x.title} — ${x.snippet}`).join('\n');
+  return `Você é um coach especialista no jogo ${p.game}. Analise SOMENTE os dados observados da conta e as fontes web fornecidas. Não invente valores ausentes. Se OCR estiver ambíguo, marque como lacuna. O objetivo é entregar ações úteis e específicas para melhorar a conta, evitando recomendações genéricas.\n\nREGRAS:\n- Priorize ações concretas: quem evoluir, onde gastar, onde NÃO gastar, que equipe usar, que recurso guardar, qual conteúdo priorizar.\n- Compare com a sessão anterior quando houver dados.\n- Não recomende personagem/cavaleiro/piloto como possuído se isso não estiver sustentado pelos dados.\n- Se faltarem dados para uma decisão, diga exatamente qual dado falta em gaps.\n- Use as fontes web apenas como contexto atual; não trate snippet como verdade absoluta.\n- Retorne APENAS JSON válido, sem markdown.\n\nFORMATO EXATO:\n{\n  "confidence": 0-100,\n  "accountSummary": "resumo curto e específico",\n  "actions": ["ação 1", "ação 2"],\n  "avoid": ["não faça 1"],\n  "teams": ["time/formação e uso, se houver base"],\n  "changes": ["mudanças desde a sessão anterior"],\n  "gaps": ["dados faltantes que impedem decisão"],\n  "webFindings": ["achado atual relevante da web"]\n}\n\nRESUMO LOCAL ATUAL:\n${JSON.stringify(p.localSummary||{})}\n\nRESUMO ANTERIOR:\n${JSON.stringify(p.previousSummary||{})}\n\nOCR DA SESSÃO:\n${lines.join('\n')}\n\nFONTES WEB:\n${web||'Nenhuma fonte encontrada.'}`;
+}
+
+async function callOpenRouter(prompt:string):Promise<AiCoachResult|null>{
+  const key=process.env.OPENROUTER_API_KEY; if(!key) return null;
+  try{
+    const model=process.env.OPENROUTER_MODEL||'google/gemini-2.0-flash-001';
+    const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${key}`},body:JSON.stringify({model,messages:[{role:'user',content:prompt}],temperature:0.2,max_tokens:1600})});
+    if(!res.ok)return null;
+    const data:any=await res.json();
+    const parsed=safeJsonParse(data?.choices?.[0]?.message?.content||'');
+    return parsed?normalizeAi(parsed,'OpenRouter',model):null;
+  }catch{return null}
+}
+
+async function callGroq(prompt:string):Promise<AiCoachResult|null>{
+  const key=process.env.GROQ_API_KEY; if(!key) return null;
+  try{
+    const model=process.env.GROQ_MODEL||'llama-3.3-70b-versatile';
+    const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${key}`},body:JSON.stringify({model,messages:[{role:'user',content:prompt}],temperature:0.2,max_tokens:1600,response_format:{type:'json_object'}})});
+    if(!res.ok)return null;
+    const data:any=await res.json();
+    const parsed=safeJsonParse(data?.choices?.[0]?.message?.content||'');
+    return parsed?normalizeAi(parsed,'Groq',model):null;
+  }catch{return null}
+}
+
+async function callGemini(prompt:string):Promise<AiCoachResult|null>{
+  const key=process.env.GEMINI_API_KEY; if(!key) return null;
+  try{
+    const model=process.env.GEMINI_MODEL||'gemini-2.0-flash';
+    const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+    const res=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.2,responseMimeType:'application/json',maxOutputTokens:1600}})});
+    if(!res.ok)return null;
+    const data:any=await res.json();
+    const text=data?.candidates?.[0]?.content?.parts?.map((x:any)=>x.text||'').join('')||'';
+    const parsed=safeJsonParse(text);
+    return parsed?normalizeAi(parsed,'Gemini',model):null;
+  }catch{return null}
+}
+
+function heuristicAi(p:ObservationPayload,webIntel:WebIntel[]):AiCoachResult{
+  const local=p.localSummary||{};
+  const recs=Array.isArray(local?.recommendations)?local.recommendations.map(String):[];
+  const gaps:string[]=[];
+  if(Number(local?.coveragePercent||0)<80)gaps.push(`Cobertura atual ${Number(local?.coveragePercent||0)}%; continue usando o jogo normalmente para completar áreas faltantes.`);
+  return {
+    provider:'Local fallback',confidence:35,
+    accountSummary:`${p.game}: ${local?.status||'sessão registrada'} com ${local?.entities?.length||0} itens reconhecidos.`,
+    actions:recs.slice(0,5),avoid:[],teams:[],changes:local?.newEntities>0?[`${local.newEntities} novos itens/nomes foram detectados.`]:[],gaps,
+    webFindings:webIntel.slice(0,3).map(x=>x.title)
+  };
+}
+
+export async function generateAiCoach(p:ObservationPayload,webIntel:WebIntel[]):Promise<AiCoachResult>{
+  const prompt=buildPrompt(p,webIntel);
+  return await callOpenRouter(prompt) || await callGroq(prompt) || await callGemini(prompt) || heuristicAi(p,webIntel);
+}
+
+export async function analyzeObservation(p:ObservationPayload,webIntel:WebIntel[]=[]){
+  const clean=[...new Set((p.lines||[]).map(x=>String(x).trim()).filter(Boolean))];
+  const ai=await generateAiCoach(p,webIntel);
+  return {ok:true,game:p.game,sessionId:p.sessionId||null,screens:p.screens||0,uniqueLines:clean.length,receivedAt:new Date().toISOString(),localSummary:p.localSummary||{},ai,webIntel};
 }
