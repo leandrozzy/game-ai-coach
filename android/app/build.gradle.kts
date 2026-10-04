@@ -1,7 +1,19 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
-android { namespace="com.gameaicoach"; compileSdk=35
- defaultConfig { applicationId="com.gameaicoach"; minSdk=26; targetSdk=35; versionCode=3; versionName="0.3.0" }
- buildTypes { release { isMinifyEnabled=false; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),"proguard-rules.pro") } }
+android {
+ namespace="com.gameaicoach"; compileSdk=35
+ defaultConfig { applicationId="com.gameaicoach"; minSdk=26; targetSdk=35; versionCode=10; versionName="1.0.0" }
+ signingConfigs {
+  create("coach") {
+   storeFile=file("../coach-release.keystore")
+   storePassword="GameAICoach2026"
+   keyAlias="coach"
+   keyPassword="GameAICoach2026"
+  }
+ }
+ buildTypes {
+  debug { signingConfig=signingConfigs.getByName("coach") }
+  release { isMinifyEnabled=false; signingConfig=signingConfigs.getByName("coach"); proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),"proguard-rules.pro") }
+ }
  compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 }
  kotlinOptions { jvmTarget="17" }
 }
