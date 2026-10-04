@@ -118,6 +118,7 @@ class CaptureService:Service(){
 
  private fun saveAndSendSession(){
   val game=Store.loadActiveGame(this)
+  val previousSummary=Store.loadSummary(this,game)
   val summary=GameParser.parse(game,framesText.toList())
   val lines=framesText.flatten().distinct()
   Store.saveSession(this,game,summary,lines,frames)
@@ -126,14 +127,19 @@ class CaptureService:Service(){
    put("game",game);put("sessionId",session);put("screens",frames)
    put("startedAt",started.toString());put("endedAt",System.currentTimeMillis().toString())
    put("lines",JSONArray(lines.take(2500)));put("localSummary",summary)
+   if(previousSummary!=null)put("previousSummary",previousSummary)
   }
   val req=Request.Builder().url("$VERCEL_BASE/api/observe")
    .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
-  OkHttpClient().newCall(req).enqueue(object:Callback{
-   override fun onFailure(c:Call,e:IOException){cleanupAndStop()}
+  OkHttpClient.Builder().callTimeout(35,java.util.concurrent.TimeUnit.SECONDS).build().newCall(req).enqueue(object:Callback{
+   override fun onFailure(c:Call,e:IOException){
+    Store.saveServerAnalysis(this@CaptureService,game,JSONObject().put("ok",false).put("pending",false).put("error","Não foi possível consultar a IA agora. A sessão ficou salva no celular."))
+    cleanupAndStop()
+   }
    override fun onResponse(c:Call,r:Response){
     val body=r.body?.string().orEmpty()
     if(r.isSuccessful)runCatching{Store.saveServerAnalysis(this@CaptureService,game,JSONObject(body))}
+    else Store.saveServerAnalysis(this@CaptureService,game,JSONObject().put("ok",false).put("error","Servidor respondeu HTTP ${r.code}."))
     r.close();cleanupAndStop()
    }
   })

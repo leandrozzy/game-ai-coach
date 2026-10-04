@@ -1,29 +1,40 @@
 package com.gameaicoach
 
-import org.json.JSONArray
 import org.json.JSONObject
 
 object CoachEngine {
     fun buildToday(summary: JSONObject?, server: JSONObject?): List<String> {
-        val items = mutableListOf<String>()
-        val recs = summary?.optJSONArray("recommendations")
-        if (recs != null) for (i in 0 until minOf(recs.length(), 5)) items.add(recs.optString(i))
-        val web = server?.optJSONArray("webIntel")
-        if (web != null && web.length() > 0) {
-            val first = web.optJSONObject(0)
-            first?.optString("title")?.takeIf { it.isNotBlank() }?.let { items.add("Web: $it") }
+        val out = mutableListOf<String>()
+        val ai = server?.optJSONObject("ai")
+        val actions = ai?.optJSONArray("actions")
+        if (actions != null) for (i in 0 until minOf(actions.length(), 6)) {
+            val s = actions.optString(i).trim()
+            if (s.isNotBlank()) out.add(s)
         }
-        if (items.isEmpty()) items.add("Inicie o Coach e jogue normalmente. As recomendações ficam melhores a cada sessão observada.")
-        return items.take(6)
+        if (out.isEmpty()) {
+            val recs = summary?.optJSONArray("recommendations")
+            if (recs != null) for (i in 0 until minOf(recs.length(), 5)) out.add(recs.optString(i))
+        }
+        if (out.isEmpty()) out.add("Inicie o Coach e jogue normalmente. Após finalizar, a IA cruza sua conta com informações atuais e cria prioridades.")
+        return out.take(6)
     }
 
-    fun coverageText(summary: JSONObject?): String {
-        if (summary == null) return "0%"
-        return "${summary.optInt("coveragePercent",0)}%"
+    fun aiSummary(server: JSONObject?): String = server?.optJSONObject("ai")?.optString("accountSummary")?.trim().orEmpty()
+    fun aiConfidence(server: JSONObject?): Int = server?.optJSONObject("ai")?.optInt("confidence",0) ?: 0
+    fun aiProvider(server: JSONObject?): String = server?.optJSONObject("ai")?.optString("provider")?.trim().orEmpty()
+
+    fun aiList(server: JSONObject?, key: String, max: Int = 6): List<String> {
+        val arr = server?.optJSONObject("ai")?.optJSONArray(key) ?: return emptyList()
+        val out = mutableListOf<String>()
+        for (i in 0 until minOf(arr.length(), max)) {
+            val s = arr.optString(i).trim()
+            if (s.isNotBlank()) out.add(s)
+        }
+        return out
     }
 
+    fun coverageText(summary: JSONObject?): String = if (summary == null) "0%" else "${summary.optInt("coveragePercent",0)}%"
     fun entityCount(summary: JSONObject?): Int = summary?.optJSONArray("entities")?.length() ?: 0
-
     fun newEntityCount(summary: JSONObject?): Int = summary?.optInt("newEntities",0) ?: 0
 
     fun coverageDetails(summary: JSONObject?): List<Pair<String,Boolean>> {
