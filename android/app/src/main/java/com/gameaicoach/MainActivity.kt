@@ -24,116 +24,150 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 class MainActivity:AppCompatActivity(){
- private lateinit var gameSpinner:Spinner
- private lateinit var content:LinearLayout
+ private lateinit var spinner:Spinner
+ private lateinit var body:LinearLayout
  private lateinit var status:TextView
  private lateinit var start:Button
  private lateinit var stop:Button
  private lateinit var reanalyze:Button
  private lateinit var importKeys:Button
  private val games=listOf("Marvel Strike Force","Saint Seiya Awakening","F1 Clash")
- private val blue=Color.rgb(45,122,255);private val bg=Color.rgb(7,13,23);private val panel=Color.rgb(16,27,44)
- private val muted=Color.rgb(148,163,184);private val green=Color.rgb(92,224,144);private val amber=Color.rgb(255,190,92)
+ private val bg=Color.rgb(7,13,23)
+ private val panel=Color.rgb(16,27,44)
+ private val blue=Color.rgb(45,122,255)
+ private val green=Color.rgb(92,224,144)
+ private val amber=Color.rgb(255,190,92)
+ private val muted=Color.rgb(148,163,184)
  private val vercel="https://game-ai-coach-indol.vercel.app"
  private val osm="https://osm-ai-coach-pro-cloud-v4.vercel.app/?exportGameCoach=1"
 
- private val projectionLauncher=registerForActivityResult(ActivityResultContracts.StartActivityForResult()){r->
+ private val captureLauncher=registerForActivityResult(ActivityResultContracts.StartActivityForResult()){r->
   if(r.resultCode==Activity.RESULT_OK&&r.data!=null){
-   val game=gameSpinner.selectedItem.toString()
+   val game=spinner.selectedItem.toString()
    Store.saveActiveGame(this,game)
-   val i=Intent(this,CaptureService::class.java).putExtra("resultCode",r.resultCode).putExtra("data",r.data)
+   Store.beginSession(this,game)
+   val i=Intent(this,CaptureService::class.java)
+    .putExtra("resultCode",r.resultCode)
+    .putExtra("data",r.data)
    if(Build.VERSION.SDK_INT>=26)startForegroundService(i) else startService(i)
-   refresh();launchSelectedGame(game)
-  }else Toast.makeText(this,"Captura não autorizada.",Toast.LENGTH_LONG).show()
+   refresh()
+   launchGame(game)
+  }else{
+   Toast.makeText(this,"Captura não autorizada.",Toast.LENGTH_LONG).show()
+  }
  }
 
- override fun onCreate(b:Bundle?){
-  super.onCreate(b)
-  if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
+ override fun onCreate(savedInstanceState:Bundle?){
+  super.onCreate(savedInstanceState)
+  if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
    requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),2)
-  handleImportIntent(intent)
-  Store.recover(this,Store.loadActiveGame(this))
+  }
+  handleImport(intent)
   buildUi()
+  Store.recover(this,Store.loadActiveGame(this))
   refresh()
  }
 
  override fun onNewIntent(intent:Intent){
-  super.onNewIntent(intent);setIntent(intent)
-  if(handleImportIntent(intent)&&::content.isInitialized){
-   refresh();Toast.makeText(this,"APIs do OSM conectadas.",Toast.LENGTH_SHORT).show()
+  super.onNewIntent(intent)
+  setIntent(intent)
+  if(handleImport(intent)){
+   Toast.makeText(this,"APIs do OSM conectadas.",Toast.LENGTH_SHORT).show()
+   refresh()
   }
  }
 
- override fun onResume(){super.onResume();if(::content.isInitialized)refresh()}
+ override fun onResume(){
+  super.onResume()
+  if(::spinner.isInitialized){
+   Store.recover(this,spinner.selectedItem?.toString()?:Store.loadActiveGame(this))
+   refresh()
+  }
+ }
 
- private fun handleImportIntent(i:Intent?):Boolean{
+ private fun handleImport(i:Intent?):Boolean{
   val d=i?.data?:return false
   if(d.scheme!="gameaicoach"||d.host!="import")return false
   return try{
    val j=JSONObject(d.getQueryParameter("data")?:"")
-   val g=j.optString("google").trim();val q=j.optString("groq").trim()
-   if(g.isBlank()&&q.isBlank())false else{Store.saveApiKeys(this,g,q);true}
+   val g=j.optString("google").trim()
+   val q=j.optString("groq").trim()
+   if(g.isBlank()&&q.isBlank())false else{
+    Store.saveApiKeys(this,g,q)
+    true
+   }
   }catch(_:Exception){false}
  }
 
  private fun buildUi(){
-  val scroll=ScrollView(this).apply{setBackgroundColor(bg);isFillViewport=true}
-  val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(22,30,22,50)}
-  scroll.addView(root,ViewGroup.LayoutParams(-1,-2))
-  root.addView(txt("GAME AI COACH",30f,true))
-  root.addView(txt("Seu plano de evolução, atualizado enquanto você joga",14f,false,muted))
+  val scroll=ScrollView(this).apply{setBackgroundColor(bg)}
+  val root=LinearLayout(this).apply{
+   orientation=LinearLayout.VERTICAL
+   setPadding(22,28,22,48)
+  }
+  scroll.addView(root)
+
+  root.addView(text("GAME AI COACH",30f,true))
+  root.addView(text("v2.3.0 • sessão persistente",12f,true,green))
+  root.addView(text("Seu plano de evolução, atualizado enquanto você joga",14f,false,muted))
   root.addView(space(14))
 
-  gameSpinner=Spinner(this)
-  gameSpinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,games)
-  gameSpinner.setSelection(games.indexOf(Store.loadActiveGame(this)).coerceAtLeast(0))
-  gameSpinner.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
-   override fun onNothingSelected(p:android.widget.AdapterView<*>?){}
-   override fun onItemSelected(p:android.widget.AdapterView<*>?,v:View?,pos:Int,id:Long){
-    Store.saveActiveGame(this@MainActivity,games[pos]);Store.recover(this@MainActivity,games[pos]);refresh()
+  spinner=Spinner(this)
+  spinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,games)
+  spinner.setSelection(games.indexOf(Store.loadActiveGame(this)).coerceAtLeast(0))
+  spinner.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener{
+   override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
+   override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){
+    Store.saveActiveGame(this@MainActivity,games[position])
+    Store.recover(this@MainActivity,games[position])
+    refresh()
    }
   }
-  root.addView(card(gameSpinner,Color.rgb(20,33,53)))
-  status=txt("",13f,true);root.addView(status)
+  root.addView(card(spinner,Color.rgb(20,33,53)))
 
-  importKeys=button("⇩ IMPORTAR APIs DO OSM",Color.rgb(101,84,192)).apply{
-   setOnClickListener{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(osm)))}
+  status=text("",13f,true)
+  root.addView(status)
+
+  importKeys=button("⇩ IMPORTAR APIs DO OSM",Color.rgb(101,84,192))
+  importKeys.setOnClickListener{
+   startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(osm)))
   }
   root.addView(importKeys,LinearLayout.LayoutParams(-1,-2).apply{topMargin=8})
 
   val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-  start=button("▶ INICIAR",blue).apply{
-   setOnClickListener{projectionLauncher.launch((getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager).createScreenCaptureIntent())}
+  start=button("▶ INICIAR",blue)
+  start.setOnClickListener{
+   val game=spinner.selectedItem.toString()
+   Store.beginSession(this,game)
+   val mgr=getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+   captureLauncher.launch(mgr.createScreenCaptureIntent())
   }
-  stop=button("■ FINALIZAR",Color.rgb(65,80,104)).apply{
-   setOnClickListener{
-    val i=Intent(this@MainActivity,CaptureService::class.java).setAction(CaptureService.ACTION_FINISH)
-    if(Build.VERSION.SDK_INT>=26)startForegroundService(i) else startService(i)
-    Toast.makeText(this@MainActivity,"Salvando e analisando…",Toast.LENGTH_SHORT).show()
-    Handler(Looper.getMainLooper()).postDelayed({refresh()},1800)
-   }
+  stop=button("■ FINALIZAR",Color.rgb(65,80,104))
+  stop.setOnClickListener{
+   val i=Intent(this,CaptureService::class.java).setAction(CaptureService.ACTION_FINISH)
+   if(Build.VERSION.SDK_INT>=26)startForegroundService(i) else startService(i)
+   Toast.makeText(this,"Salvando e analisando…",Toast.LENGTH_SHORT).show()
+   Handler(Looper.getMainLooper()).postDelayed({refresh()},1600)
   }
   row.addView(start,LinearLayout.LayoutParams(0,-2,1f).apply{marginEnd=7})
   row.addView(stop,LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=7})
   root.addView(row,LinearLayout.LayoutParams(-1,-2).apply{topMargin=8})
 
-  reanalyze=button("↻ REANALISAR ÚLTIMA SESSÃO",Color.rgb(39,154,117)).apply{
-   setOnClickListener{reanalyzeLastSession()}
-  }
+  reanalyze=button("↻ REANALISAR ÚLTIMA SESSÃO",Color.rgb(39,154,117))
+  reanalyze.setOnClickListener{reanalyze()}
   root.addView(reanalyze,LinearLayout.LayoutParams(-1,-2).apply{topMargin=10})
-  root.addView(space(14))
-  content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};root.addView(content)
+
+  body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+  root.addView(body,LinearLayout.LayoutParams(-1,-2).apply{topMargin=12})
   setContentView(scroll)
  }
 
- private fun reanalyzeLastSession(){
-  val game=gameSpinner.selectedItem.toString()
+ private fun reanalyze(){
+  val game=spinner.selectedItem.toString()
   Store.recover(this,game)
   val lines=Store.loadRawLines(this,game)
-  val local=Store.loadSummary(this,game)
-
-  if(lines.isEmpty()||local==null){
-   Toast.makeText(this,"Não encontrei sessão salva. Faça uma coleta; agora ela é salva durante o jogo.",Toast.LENGTH_LONG).show()
+  if(lines.isEmpty()){
+   Toast.makeText(this,"Ainda não há texto salvo. Toque INICIAR e abra algumas telas; cada tela agora é salva imediatamente.",Toast.LENGTH_LONG).show()
    return
   }
   if(!Store.hasApiKeys(this)){
@@ -141,16 +175,21 @@ class MainActivity:AppCompatActivity(){
    return
   }
 
-  Toast.makeText(this,"Reanalisando ${lines.size} linhas salvas…",Toast.LENGTH_SHORT).show()
+  val summary=Store.loadSummary(this,game)?:JSONObject()
+   .put("frames",0)
+   .put("uniqueLines",lines.size)
+   .put("coveragePercent",50)
+
   Store.saveServerAnalysis(this,game,JSONObject().put("pending",true))
   refresh()
+  Toast.makeText(this,"Reanalisando ${lines.size} linhas salvas…",Toast.LENGTH_SHORT).show()
 
   val payload=JSONObject().apply{
    put("game",game)
    put("sessionId","reanalyze-"+UUID.randomUUID())
-   put("screens",local.optInt("frames",0))
+   put("screens",summary.optInt("frames",0))
    put("lines",JSONArray(lines.take(2500)))
-   put("localSummary",local)
+   put("localSummary",summary)
    Store.loadPreviousSummary(this@MainActivity,game)?.let{put("previousSummary",it)}
    put("keys",Store.apiKeysJson(this@MainActivity))
   }
@@ -159,32 +198,36 @@ class MainActivity:AppCompatActivity(){
    .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
 
   OkHttpClient.Builder().callTimeout(45,TimeUnit.SECONDS).build().newCall(req).enqueue(object:Callback{
-   override fun onFailure(c:Call,e:IOException){runOnUiThread{
-    Store.saveServerAnalysis(this@MainActivity,game,JSONObject()
-     .put("ok",false).put("pending",false).put("error","Sessão preservada; IA indisponível agora."))
-    refresh()
-   }}
-   override fun onResponse(c:Call,r:Response){
-    val body=r.body?.string().orEmpty()
+   override fun onFailure(call:Call,e:IOException){
     runOnUiThread{
-     if(r.isSuccessful){
-      runCatching{Store.saveServerAnalysis(this@MainActivity,game,JSONObject(body))}
-       .onFailure{Store.saveServerAnalysis(this@MainActivity,game,JSONObject()
-        .put("ok",false).put("pending",false).put("error","Resposta da IA inválida."))}
+     Store.saveServerAnalysis(this@MainActivity,game,JSONObject()
+      .put("pending",false).put("error","Sessão continua salva; IA indisponível agora."))
+     refresh()
+    }
+   }
+   override fun onResponse(call:Call,response:Response){
+    val raw=response.body?.string().orEmpty()
+    runOnUiThread{
+     if(response.isSuccessful){
+      runCatching{Store.saveServerAnalysis(this@MainActivity,game,JSONObject(raw))}
+       .onFailure{
+        Store.saveServerAnalysis(this@MainActivity,game,JSONObject()
+         .put("pending",false).put("error","Resposta da IA inválida."))
+       }
      }else{
       Store.saveServerAnalysis(this@MainActivity,game,JSONObject()
-       .put("ok",false).put("pending",false).put("error","Servidor respondeu HTTP ${r.code}."))
+       .put("pending",false).put("error","Servidor HTTP ${response.code}."))
      }
      refresh()
     }
-    r.close()
+    response.close()
    }
   })
  }
 
  private fun refresh(){
   val active=Store.isCaptureActive(this)
-  status.text=if(active)"● COACH ATIVO — sessão sendo salva" else "● PRONTO"
+  status.text=if(active)"● COACH ATIVO — salvando cada tela" else "● PRONTO"
   status.setTextColor(if(active)green else muted)
   start.isEnabled=!active
   stop.isEnabled=active
@@ -193,58 +236,136 @@ class MainActivity:AppCompatActivity(){
  }
 
  private fun render(){
-  if(!::content.isInitialized)return
-  content.removeAllViews()
-  val game=gameSpinner.selectedItem?.toString()?:Store.loadActiveGame(this)
+  if(!::body.isInitialized)return
+  body.removeAllViews()
+  val game=spinner.selectedItem?.toString()?:Store.loadActiveGame(this)
   Store.recover(this,game)
-  val local=Store.loadSummary(this,game)
+  val lines=Store.loadRawLines(this,game)
+  val summary=Store.loadSummary(this,game)
   val server=Store.loadServerAnalysis(this,game)
 
   if(server?.optBoolean("pending",false)==true){
-   hero("ANALISANDO","A sessão está salva. Gerando prioridades, upgrades e times…",blue);diagnostic(local);return
+   hero("ANALISANDO","A sessão já está salva. Gerando prioridades, upgrades e times…",blue)
+   diagnostic(lines.size,summary)
+   return
   }
 
-  val error=server?.optString("error").orEmpty()
-  if(error.isNotBlank()){
-   hero("SESSÃO PRESERVADA",error,amber);diagnostic(local);return
+  val err=server?.optString("error").orEmpty()
+  if(err.isNotBlank()){
+   hero("SESSÃO PRESERVADA",err,amber)
+   diagnostic(lines.size,summary)
+   return
   }
 
   if(CoachEngine.connected(server)){
    hero(CoachEngine.headline(server).ifBlank{"Plano atualizado"},CoachEngine.summary(server),green)
+
    section("PLANO DE HOJE")
-   CoachEngine.plan(server).forEachIndexed{i,o->
-    planCard(i+1,o.optString("title"),o.optString("action"),o.optString("reason"))
+   val plan=CoachEngine.plan(server)
+   if(plan.isEmpty())simpleCard("Sem ações específicas retornadas pela IA.",muted)
+   plan.forEachIndexed{i,o->
+    val b=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+    b.addView(text("${i+1}. ${o.optString("title").ifBlank{"Prioridade"}}",16f,true))
+    if(o.optString("action").isNotBlank())b.addView(text(o.optString("action"),14f,true,Color.rgb(153,197,255)))
+    if(o.optString("reason").isNotBlank())b.addView(text(o.optString("reason"),13f,false,Color.rgb(190,201,217)))
+    body.addView(card(b,panel))
    }
+
    val ups=CoachEngine.upgrades(server)
-   if(ups.isNotEmpty()){section("EVOLUIR AGORA");ups.forEach{o->infoCard(o.optString("target"),o.optString("reason"),blue)}}
+   if(ups.isNotEmpty()){
+    section("EVOLUIR AGORA")
+    ups.forEach{o->simpleCard("${o.optString("target")}\n${o.optString("reason")}",blue)}
+   }
+
    val teams=CoachEngine.teams(server)
-   if(teams.isNotEmpty()){section("TIMES / FORMAÇÕES");teams.forEach{o->
-    val a=o.optJSONArray("units")
-    val names=if(a==null)"" else (0 until a.length()).map{a.optString(it)}.filter{it.isNotBlank()}.joinToString(" • ")
-    infoCard(o.optString("mode"),"$names\n${o.optString("why")}",Color.rgb(72,173,255))
-   }}
+   if(teams.isNotEmpty()){
+    section("TIMES / FORMAÇÕES")
+    teams.forEach{o->
+     val a=o.optJSONArray("units")
+     val names=if(a==null)"" else (0 until a.length()).map{a.optString(it)}.joinToString(" • ")
+     simpleCard("${o.optString("mode")}\n$names\n${o.optString("why")}",Color.rgb(72,173,255))
+    }
+   }
+
    val avoid=CoachEngine.objects(server,"avoid")
-   if(avoid.isNotEmpty()){section("NÃO GASTE / EVITE");avoid.forEach{o->infoCard(o.optString("title"),o.optString("reason"),amber)}}
-   val resources=CoachEngine.resources(server)
-   if(resources.isNotEmpty()){section("RECURSOS");resources.forEach{o->infoCard(o.optString("name"),"${o.optString("value")} ${o.optString("advice")}".trim(),Color.rgb(177,136,255))}}
+   if(avoid.isNotEmpty()){
+    section("NÃO GASTE / EVITE")
+    avoid.forEach{o->simpleCard("${o.optString("title")}\n${o.optString("reason")}",amber)}
+   }
   }else{
-   val lines=Store.loadRawLines(this,game)
-   hero(if(lines.isEmpty())"PRONTO PARA COLETAR" else "SESSÃO SALVA",
-    if(lines.isEmpty())"Inicie o Coach. A partir desta versão a leitura é salva durante o jogo."
-    else "${lines.size} linhas estão salvas. Toque em REANALISAR ÚLTIMA SESSÃO.",amber)
+   if(lines.isEmpty()){
+    hero("PRONTO PARA COLETAR","Toque INICIAR. A primeira tela reconhecida já será salva no aparelho e em Downloads/Game-AI-Coach.",amber)
+   }else{
+    hero("SESSÃO SALVA","${lines.size} linhas já estão preservadas. Você pode REANALISAR sem entrar no jogo.",green)
+   }
   }
-  diagnostic(local)
+
+  diagnostic(lines.size,summary)
  }
 
- private fun hero(title:String,body:String,color:Int){val b=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};b.addView(txt(title,20f,true,color));b.addView(txt(body,14f,false,Color.rgb(210,219,232)).apply{setPadding(0,9,0,0)});content.addView(card(b,Color.rgb(18,31,50)))}
- private fun planCard(n:Int,title:String,action:String,reason:String){val b=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};b.addView(txt("$n  ${title.ifBlank{"Prioridade"}}",16f,true));if(action.isNotBlank())b.addView(txt(action,15f,true,Color.rgb(153,197,255)).apply{setPadding(0,7,0,0)});if(reason.isNotBlank())b.addView(txt(reason,13.5f,false,Color.rgb(190,201,217)).apply{setPadding(0,6,0,0)});content.addView(card(b,panel))}
- private fun infoCard(title:String,body:String,color:Int){val b=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};b.addView(txt(title,15.5f,true,color));if(body.isNotBlank())b.addView(txt(body,13.5f,false,Color.rgb(190,201,217)).apply{setPadding(0,6,0,0)});content.addView(card(b,panel))}
- private fun diagnostic(local:JSONObject?){section("DIAGNÓSTICO DE LEITURA");val t=if(local==null)"Nenhuma sessão salva." else "Cobertura: ${CoachEngine.coverage(local)} • Telas: ${local.optInt("frames",0)} • Linhas: ${local.optInt("uniqueLines",0)}";content.addView(card(txt(t,12.5f,false,muted),Color.rgb(12,20,33)))}
- private fun section(s:String)=content.addView(txt(s,12.5f,true,Color.rgb(123,146,178)).apply{setPadding(2,20,0,8)})
- private fun txt(t:String,s:Float,b:Boolean,c:Int=Color.WHITE)=TextView(this).apply{text=t;textSize=s;setTextColor(c);if(b)setTypeface(typeface,Typeface.BOLD)}
- private fun button(t:String,c:Int)=Button(this).apply{text=t;setTextColor(Color.WHITE);textSize=13f;background=round(c,16)}
- private fun card(v:View,c:Int)=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(17,15,17,15);background=round(c,21);addView(v,LinearLayout.LayoutParams(-1,-2));layoutParams=LinearLayout.LayoutParams(-1,-2).apply{topMargin=6;bottomMargin=6}}
+ private fun diagnostic(count:Int,summary:JSONObject?){
+  section("DIAGNÓSTICO DE LEITURA")
+  simpleCard(
+   if(count==0)"Nenhuma sessão salva."
+   else "Sessão persistente • Telas: ${summary?.optInt("frames",0)?:0} • Linhas: $count",
+   muted
+  )
+ }
+
+ private fun hero(title:String,bodyText:String,color:Int){
+  val b=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+  b.addView(text(title,20f,true,color))
+  b.addView(text(bodyText,14f,false,Color.rgb(210,219,232)))
+  body.addView(card(b,Color.rgb(18,31,50)))
+ }
+
+ private fun section(s:String){
+  body.addView(text(s,12.5f,true,Color.rgb(123,146,178)).apply{setPadding(2,18,0,7)})
+ }
+
+ private fun simpleCard(s:String,color:Int){
+  body.addView(card(text(s,13.5f,false,color),panel))
+ }
+
+ private fun text(t:String,size:Float,bold:Boolean,color:Int=Color.WHITE)=TextView(this).apply{
+  text=t
+  textSize=size
+  setTextColor(color)
+  if(bold)setTypeface(typeface,Typeface.BOLD)
+  setPadding(0,4,0,4)
+ }
+
+ private fun button(label:String,color:Int)=Button(this).apply{
+  text=label
+  setTextColor(Color.WHITE)
+  textSize=13f
+  background=round(color,16)
+ }
+
+ private fun card(view:View,color:Int)=LinearLayout(this).apply{
+  orientation=LinearLayout.VERTICAL
+  setPadding(17,15,17,15)
+  background=round(color,21)
+  addView(view,LinearLayout.LayoutParams(-1,-2))
+  layoutParams=LinearLayout.LayoutParams(-1,-2).apply{topMargin=6;bottomMargin=6}
+ }
+
+ private fun round(color:Int,r:Int)=GradientDrawable().apply{
+  setColor(color)
+  cornerRadius=r.toFloat()
+ }
+
  private fun space(h:Int)=Space(this).apply{layoutParams=LinearLayout.LayoutParams(1,h)}
- private fun round(c:Int,r:Int)=GradientDrawable().apply{setColor(c);cornerRadius=r.toFloat()}
- private fun launchSelectedGame(name:String){val pkg=when{name.startsWith("Marvel")->"com.foxnextgames.m3";name.startsWith("Saint")->"com.tencent.tmgp.sskeus";else->"com.hutchgames.formularacing"};packageManager.getLaunchIntentForPackage(pkg)?.let{it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(it)}}
+
+ private fun launchGame(name:String){
+  val pkg=when{
+   name.startsWith("Marvel")->"com.foxnextgames.m3"
+   name.startsWith("Saint")->"com.tencent.tmgp.sskeus"
+   else->"com.hutchgames.formularacing"
+  }
+  packageManager.getLaunchIntentForPackage(pkg)?.let{
+   it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+   startActivity(it)
+  }
+ }
 }

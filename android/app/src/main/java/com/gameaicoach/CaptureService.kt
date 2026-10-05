@@ -45,12 +45,15 @@ class CaptureService:Service(){
  override fun onCreate(){
   super.onCreate()
   Store.setCaptureActive(this,true)
+  val game=Store.loadActiveGame(this)
+  Store.beginSession(this,game)
+
   val ch="coach_capture"
   if(Build.VERSION.SDK_INT>=26)getSystemService(NotificationManager::class.java)
    .createNotificationChannel(NotificationChannel(ch,"Coach ativo",NotificationManager.IMPORTANCE_LOW))
   startForeground(1001,Notification.Builder(this,ch)
    .setContentTitle("Game AI Coach ativo")
-   .setContentText("Lendo e salvando sua sessão automaticamente.")
+   .setContentText("Sessão salva continuamente.")
    .setSmallIcon(android.R.drawable.ic_menu_view).build())
  }
 
@@ -75,7 +78,7 @@ class CaptureService:Service(){
 
   reader?.setOnImageAvailableListener({r->
    val now=System.currentTimeMillis()
-   if(now-last<1200||processing.get()){r.acquireLatestImage()?.close();return@setOnImageAvailableListener}
+   if(now-last<1000||processing.get()){r.acquireLatestImage()?.close();return@setOnImageAvailableListener}
    last=now
    val image=r.acquireLatestImage()?:return@setOnImageAvailableListener
    try{
@@ -87,20 +90,21 @@ class CaptureService:Service(){
     bmp.copyPixelsFromBuffer(p.buffer)
     frames++
     processing.set(true)
+
     recognizer.process(InputImage.fromBitmap(bmp,0))
      .addOnSuccessListener{t->
       val ls=t.textBlocks.flatMap{it.lines}.map{it.text.trim()}.filter{it.length>1}
       if(ls.isNotEmpty()){
        framesText.add(ls)
-       if(frames%8==0){
-        val game=Store.loadActiveGame(this)
-        Store.saveCheckpoint(this,game,framesText.flatten(),frames)
-       }
+       Store.saveCheckpoint(this,Store.loadActiveGame(this),framesText.flatten(),frames)
       }
       bmp.recycle()
       processing.set(false)
      }
-     .addOnFailureListener{bmp.recycle();processing.set(false)}
+     .addOnFailureListener{
+      bmp.recycle()
+      processing.set(false)
+     }
    }finally{image.close()}
   },Handler(Looper.getMainLooper()))
  }
@@ -111,29 +115,40 @@ class CaptureService:Service(){
   try{reader?.setOnImageAvailableListener(null,null)}catch(_:Exception){}
   try{reader?.close()}catch(_:Exception){}
   try{display?.release()}catch(_:Exception){}
-  Handler(Looper.getMainLooper()).postDelayed({saveAndSendSession()},900)
+  Handler(Looper.getMainLooper()).postDelayed({saveAndSendSession()},700)
  }
 
  private fun saveAndSendSession(){
   val game=Store.loadActiveGame(this)
-  val previous=Store.loadSummary(this,game)
   val snap=framesText.toList()
-  val lines=snap.flatten().distinct()
+  var lines=snap.flatten().distinct()
+
+  if(lines.isEmpty()){
+   lines=Store.loadRawLines(this,game)
+  }
 
   if(lines.isEmpty()){
    Store.saveServerAnalysis(this,game,JSONObject()
-    .put("ok",false).put("error","Nenhum texto foi capturado nesta sessão."))
+    .put("ok",false).put("pending",false)
+    .put("error","Nenhum texto foi capturado. Abra algumas telas do jogo e tente novamente."))
    cleanup()
    return
   }
 
-  val summary=GameParser.parse(game,snap)
+  val previous=Store.loadSummary(this,game)
+  val summary=if(snap.isNotEmpty())GameParser.parse(game,snap)
+   else JSONObject()
+    .put("game",game)
+    .put("uniqueLines",lines.size)
+    .put("coveragePercent",50)
+    .put("status","Sessão recuperada")
+
   Store.saveSession(this,game,summary,lines,frames)
 
   val payload=JSONObject().apply{
    put("game",game)
    put("sessionId",session)
-   put("screens",frames)
+   put("screens",summary.optInt("frames",frames))
    put("lines",JSONArray(lines.take(2500)))
    put("localSummary",summary)
    if(previous!=null)put("previousSummary",previous)
@@ -141,6 +156,7 @@ class CaptureService:Service(){
   }
 
   Store.saveServerAnalysis(this,game,JSONObject().put("pending",true))
+
   val req=Request.Builder().url("$VERCEL_BASE/api/observe")
    .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
 
@@ -148,15 +164,19 @@ class CaptureService:Service(){
    override fun onFailure(c:Call,e:IOException){
     Store.saveServerAnalysis(this@CaptureService,game,JSONObject()
      .put("ok",false).put("pending",false)
-     .put("error","Sessão salva. A IA não respondeu agora; use REANALISAR ÚLTIMA SESSÃO."))
+     .put("error","Sessão salva. IA indisponível agora; use REANALISAR."))
     cleanup()
    }
+
    override fun onResponse(c:Call,r:Response){
     val body=r.body?.string().orEmpty()
     if(r.isSuccessful){
      runCatching{Store.saveServerAnalysis(this@CaptureService,game,JSONObject(body))}
-      .onFailure{Store.saveServerAnalysis(this@CaptureService,game,JSONObject()
-       .put("ok",false).put("pending",false).put("error","Sessão salva; resposta da IA inválida."))}
+      .onFailure{
+       Store.saveServerAnalysis(this@CaptureService,game,JSONObject()
+        .put("ok",false).put("pending",false)
+        .put("error","Sessão salva; resposta da IA inválida."))
+      }
     }else{
      Store.saveServerAnalysis(this@CaptureService,game,JSONObject()
       .put("ok",false).put("pending",false)
