@@ -1,0 +1,197 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Game AI Coach</title>
+<style>
+:root{--bg:#0d1017;--card:#171c26;--line:#262d3b;--tx:#e8ecf3;--mut:#8b95a8;--ac:#f5b942;--ac2:#4fc3f7}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,sans-serif;padding-bottom:72px}
+header{position:sticky;top:0;background:var(--bg);padding:12px 14px 8px;border-bottom:1px solid var(--line);z-index:5}
+h1{font-size:17px;margin:0 0 8px;color:var(--ac)}h3{font-size:15px;margin:18px 0 4px}
+select,input,textarea,button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;width:100%}
+input[type=checkbox]{width:auto}textarea{min-height:120px;resize:vertical}
+label{display:block;margin-top:10px}
+button{background:var(--ac);color:#111;border:0;font-weight:600;margin-top:8px}
+button.sec{background:var(--card);color:var(--tx);border:1px solid var(--line)}
+.row{display:flex;gap:8px}.row>*{flex:1}
+section{display:none;padding:14px}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;margin:10px 0}
+.vid{display:flex;gap:10px}.vid img{width:120px;height:68px;object-fit:cover;border-radius:8px;flex:none}
+.vid b{font-size:14px;display:block}.mut{color:var(--mut);font-size:13px}
+.out{white-space:pre-wrap;word-wrap:break-word}a{color:var(--ac2)}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#0a0d13;border-top:1px solid var(--line)}
+nav a{flex:1;text-align:center;padding:8px 0 10px;color:var(--mut);font-size:11px;text-decoration:none}
+nav a.on{color:var(--ac)}nav a span{display:block;font-size:19px}
+</style></head><body>
+<header><h1>🎮 Game AI Coach</h1><select id="game"></select></header>
+
+<section id="radar" class="on">
+ <div class="row"><input id="rq" placeholder="tema (ex: melhor time arena)">
+ <select id="rord" style="max-width:125px"><option value="date">Recentes</option><option value="viewCount">Mais vistos</option><option value="relevance">Relevantes</option></select></div>
+ <button onclick="radar()">🔎 Varrer YouTube</button><div id="rlist"></div>
+</section>
+
+<section id="video">
+ <input id="vurl" placeholder="Cole o link de um vídeo do YouTube">
+ <button onclick="resumirLink()">🧠 Analisar vídeo para mim</button>
+ <div id="vout" class="card out" hidden></div>
+ <div id="vbtns" class="row" hidden><button class="sec" onclick="ouvir('vout')">🔊 Ouvir</button><button class="sec" onclick="parar()">⏹ Parar</button><button class="sec" onclick="copiar('vout')">📋 Copiar</button></div>
+ <h3>📚 Biblioteca</h3><div id="lib"></div>
+</section>
+
+<section id="codigos">
+ <p class="mut">Busca códigos oficiais de resgate na web, com fontes. Confira sempre a validade.</p>
+ <button onclick="codigos()">🎁 Buscar códigos agora</button>
+ <div id="cout" class="card out" hidden></div>
+ <div id="cbtns" class="row" hidden><button class="sec" onclick="copiar('cout')">📋 Copiar</button></div>
+</section>
+
+<section id="elenco">
+ <p class="mut">Mande prints do elenco, dos personagens e dos recursos. A IA monta a lista; revise e salve.</p>
+ <input type="file" id="prints" accept="image/*" multiple>
+ <button onclick="lerPrints()">📸 Ler prints com IA</button>
+ <p id="estat" class="mut"></p>
+ <textarea id="roster" placeholder="Seu elenco aparece aqui (pode editar à mão)"></textarea>
+ <button class="sec" onclick="salvarElenco()">💾 Salvar elenco</button>
+</section>
+
+<section id="coach">
+ <div class="row"><button class="sec" onclick="coach('O que eu devo fazer hoje no jogo, em ordem de prioridade?')">📅 Hoje</button>
+ <button class="sec" onclick="coach('Monte meu melhor time com o que eu tenho, explicando cada escolha.')">🛡️ Time</button>
+ <button class="sec" onclick="coach('Onde devo gastar meus recursos agora e o que guardar?')">💎 Recursos</button></div>
+ <textarea id="cq" placeholder="Pergunte qualquer coisa: como passar de uma fase, em quem investir..."></textarea>
+ <label class="mut"><input type="checkbox" id="kweb"> Pesquisar na web também</label>
+ <button onclick="coach()">💬 Perguntar ao Coach</button>
+ <div id="kout" class="card out" hidden></div>
+ <div id="kbtns" class="row" hidden><button class="sec" onclick="ouvir('kout')">🔊 Guia narrado</button><button class="sec" onclick="parar()">⏹ Parar</button><button class="sec" onclick="copiar('kout')">📋 Copiar</button></div>
+</section>
+
+<section id="cfg">
+ <label class="mut">Chave Gemini (Google AI Studio)</label><input id="kg" type="password">
+ <label class="mut">Chave YouTube Data API v3 (deixe vazio se ativou a API no mesmo projeto do Gemini)</label><input id="ky" type="password">
+ <label class="mut">Modelo Gemini</label><input id="km">
+ <button onclick="salvarCfg()">💾 Salvar</button>
+ <p class="mut">As chaves ficam guardadas só neste celular.</p>
+</section>
+
+<nav>
+ <a data-t="radar" class="on" onclick="go('radar')"><span>📡</span>Radar</a>
+ <a data-t="video" onclick="go('video')"><span>🎬</span>Vídeos</a>
+ <a data-t="codigos" onclick="go('codigos')"><span>🎁</span>Códigos</a>
+ <a data-t="elenco" onclick="go('elenco')"><span>🧩</span>Elenco</a>
+ <a data-t="coach" onclick="go('coach')"><span>🧠</span>Coach</a>
+ <a data-t="cfg" onclick="go('cfg')"><span>⚙️</span>Config</a>
+</nav>
+
+<script>
+const GAMES={
+ ssa:{name:"Saint Seiya Awakening",q:"Saint Seiya Awakening KOTZ",ctx:"Saint Seiya Awakening: Knights of the Zodiac (gacha de cavaleiros, cosmos, arena, história, eventos e banners)"},
+ msf:{name:"Marvel Strike Force",q:"Marvel Strike Force",ctx:"Marvel Strike Force (times, raids, guerra de alianças, arena, farm de personagens)"},
+ f1:{name:"F1 Clash",q:"F1 Clash",ctx:"F1 Clash (pilotos, peças do carro, setups, upgrades, ligas e eventos)"}
+};
+const $=s=>document.querySelector(s);
+let S=Object.assign({game:"ssa",model:"gemini-2.5-flash",gemini:"",youtube:"",roster:{},lib:{}},JSON.parse(localStorage.getItem("gac")||"{}"));
+const save=()=>localStorage.setItem("gac",JSON.stringify(S));
+const G=()=>GAMES[S.game];
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const md=t=>esc(t).replace(/^#+\s*(.*)$/gm,"<b>$1</b>").replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
+function show(id,html){const e=$("#"+id);e.hidden=false;e.innerHTML=html}
+function busy(id,msg){show(id,"⏳ "+msg)}
+function go(id){document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id==id));document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("on",a.dataset.t==id));scrollTo(0,0)}
+
+const pend={};let seq=0;
+window.__resp=(id,code,txt)=>{const p=pend[id];delete pend[id];if(p)p(code,txt)};
+function req(method,url,body){return new Promise((res,rej)=>{const id="r"+(++seq);
+ pend[id]=(c,t)=>{let j;try{j=JSON.parse(t)}catch(e){j={raw:t}}
+  if(c>=200&&c<300)res(j);else rej(new Error((j.error&&j.error.message)||("Erro HTTP "+c)))};
+ Android.request(id,method,url,body?JSON.stringify(body):"")})}
+
+async function gemini(parts,o={}){
+ if(!S.gemini)throw new Error("Configure a chave Gemini na aba Config");
+ const body={contents:[{role:"user",parts}]};if(o.search)body.tools=[{google_search:{}}];
+ const r=await req("POST",`https://generativelanguage.googleapis.com/v1beta/models/${S.model}:generateContent?key=${S.gemini}`,body);
+ const c=(r.candidates||[])[0]||{};
+ const text=((c.content||{}).parts||[]).map(p=>p.text||"").join("")||"(sem resposta — tente de novo)";
+ const src=((c.groundingMetadata||{}).groundingChunks||[]).map(x=>x.web).filter(Boolean);
+ return {text,src};
+}
+const srcs=s=>s&&s.length?"\n\n<b>Fontes:</b>\n"+s.map(w=>`• <a href="${esc(w.uri)}">${esc(w.title||w.uri)}</a>`).join("\n"):"";
+
+async function radar(){
+ const L=$("#rlist");L.innerHTML='<p class="mut">⏳ Varrendo o YouTube...</p>';
+ try{
+  const key=S.youtube||S.gemini;if(!key)throw new Error("Configure as chaves na aba Config");
+  const q=encodeURIComponent(G().q+" "+($("#rq").value.trim()||"guia dicas"));
+  const after=new Date(Date.now()-60*864e5).toISOString();
+  const r=await req("GET",`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=15&order=${$("#rord").value}&publishedAfter=${after}&q=${q}&key=${key}`);
+  const it=r.items||[];
+  L.innerHTML=it.length?it.map(v=>{const id=v.id.videoId,s=v.snippet;return `<div class="card"><div class="vid"><img src="${s.thumbnails.medium.url}"><div><b>${s.title}</b><div class="mut">${s.channelTitle} · ${s.publishedAt.slice(0,10)}</div></div></div><div class="row"><button data-t="${s.title}" onclick="resumir('${id}',this.dataset.t)">🧠 Analisar</button><button class="sec" onclick="abrir('${id}')">▶️ Abrir</button></div></div>`}).join(""):'<p class="mut">Nada encontrado. Tente outro tema.</p>';
+ }catch(e){L.innerHTML=`<p>❌ ${esc(e.message)}</p>`}
+}
+function abrir(id){location.href="https://www.youtube.com/watch?v="+id}
+
+async function resumir(id,title){
+ go("video");$("#vbtns").hidden=true;busy("vout","A IA está assistindo ao vídeo... (pode levar 1-2 min)");
+ try{
+  const ros=S.roster[S.game]||"";
+  const p=`Você é coach do jogo ${G().ctx}. Assista ao vídeo e responda em português do Brasil, prático e direto:
+1) Resumo em até 5 linhas
+2) Dicas práticas do vídeo (lista)
+3) Personagens/itens citados e se são prioridade
+4) Cruzamento com o meu elenco: o que já tenho, o que falta e o que fazer primeiro
+5) Roteiro passo a passo para eu executar no jogo
+
+Meu elenco: ${ros||"(não cadastrado — pule o item 4)"}`;
+  const r=await gemini([{fileData:{fileUri:"https://www.youtube.com/watch?v="+id}},{text:p}]);
+  show("vout",`<b>${esc(title||id)}</b>\n\n`+md(r.text));$("#vbtns").hidden=false;
+  const L=S.lib[S.game]=(S.lib[S.game]||[]).filter(v=>v.id!=id);
+  L.unshift({id,title:title||id,txt:r.text,date:new Date().toLocaleDateString("pt-BR")});L.splice(30);save();renderLib();
+ }catch(e){show("vout","❌ "+esc(e.message))}
+}
+function resumirLink(){const m=$("#vurl").value.match(/(?:v=|youtu\.be\/|shorts\/|live\/)([\w-]{11})/);if(!m)return alert("Link inválido");resumir(m[1],"")}
+function renderLib(){const L=S.lib[S.game]||[];$("#lib").innerHTML=L.length?L.map((v,i)=>`<div class="card"><b>${esc(v.title)}</b><div class="mut">${v.date}</div><div class="row"><button class="sec" onclick="verLib(${i})">Ver análise</button><button class="sec" onclick="abrir('${v.id}')">▶️ Vídeo</button></div></div>`).join(""):'<p class="mut">Os vídeos analisados aparecem aqui.</p>'}
+function verLib(i){const v=S.lib[S.game][i];show("vout",`<b>${esc(v.title)}</b>\n\n`+md(v.txt));$("#vbtns").hidden=false;scrollTo(0,0)}
+
+async function codigos(){
+ busy("cout","Pesquisando códigos na web...");$("#cbtns").hidden=true;
+ try{const r=await gemini([{text:`Hoje é ${new Date().toLocaleDateString("pt-BR")}. Pesquise na web códigos de resgate (redeem/gift codes) OFICIAIS e ativos do jogo ${G().name}. Liste cada um como: CÓDIGO — recompensa — validade — fonte. Marque "verificar" quando não tiver certeza de que está ativo e NUNCA invente códigos. Depois explique, em passos curtos, onde e como resgatar no jogo. Responda em português do Brasil.`}],{search:true});
+  show("cout",md(r.text)+srcs(r.src));$("#cbtns").hidden=false}catch(e){show("cout","❌ "+esc(e.message))}
+}
+
+function shrink(file){return new Promise((res,rej)=>{const fr=new FileReader();fr.onerror=rej;fr.onload=()=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1280/Math.max(im.width,im.height));const c=document.createElement("canvas");c.width=im.width*s;c.height=im.height*s;c.getContext("2d").drawImage(im,0,0,c.width,c.height);res(c.toDataURL("image/jpeg",.85).split(",")[1])};im.src=fr.result};fr.readAsDataURL(file)})}
+async function lerPrints(){
+ const f=[...$("#prints").files];if(!f.length)return alert("Escolha os prints primeiro");
+ const st=$("#estat");st.textContent="⏳ Lendo "+Math.min(f.length,8)+" print(s)...";
+ try{const imgs=await Promise.all(f.slice(0,8).map(shrink));
+  const r=await gemini([...imgs.map(d=>({inlineData:{mimeType:"image/jpeg",data:d}})),{text:`Estas são capturas de tela do meu jogo ${G().name}. Extraia em texto o meu elenco e recursos: nome, nível, estrelas/raridade, equipamentos/peças, poder e recursos (moedas, gemas etc.) que aparecerem. Uma linha por item, sem comentários. Não invente o que não estiver legível.`}]);
+  const t=$("#roster");t.value=(t.value?t.value+"\n":"")+r.text.trim();st.textContent="✅ Lido. Revise e toque em Salvar.";
+ }catch(e){st.textContent="❌ "+e.message}
+}
+function salvarElenco(){S.roster[S.game]=$("#roster").value;save();$("#estat").textContent="✅ Elenco salvo."}
+
+async function coach(q){
+ if(q)$("#cq").value=q;q=$("#cq").value.trim();if(!q)return;
+ busy("kout","Pensando...");$("#kbtns").hidden=true;
+ try{const vids=(S.lib[S.game]||[]).slice(0,3).map(v=>"- "+v.title+": "+v.txt.slice(0,1500)).join("\n");
+  const r=await gemini([{text:`Você é o Game AI Coach, especialista em ${G().ctx}. Responda em português do Brasil, direto e prático, com passos numerados que eu consiga seguir no jogo. Sugira só jogadas legítimas (nada de hacks, mods ou automação).
+
+Meu elenco:
+${S.roster[S.game]||"(não cadastrado)"}
+
+Dicas de vídeos que analisei:
+${vids||"(nenhum)"}
+
+Pergunta: ${q}`}],{search:$("#kweb").checked});
+  show("kout",md(r.text)+srcs(r.src));$("#kbtns").hidden=false}catch(e){show("kout","❌ "+esc(e.message))}
+}
+
+function ouvir(id){const t=$("#"+id).innerText.replace(/\p{Extended_Pictographic}/gu,"").replace(/https?:\S+/g,"").replace(/[*#•]/g,"");Android.stop();(t.match(/[\s\S]{1,3500}(?:\s|$)/g)||[]).forEach(c=>Android.speak(c))}
+function parar(){Android.stop()}
+function copiar(id){Android.copy($("#"+id).innerText);alert("Copiado!")}
+function salvarCfg(){S.gemini=$("#kg").value.trim();S.youtube=$("#ky").value.trim();S.model=$("#km").value.trim()||"gemini-2.5-flash";save();alert("Salvo!")}
+
+$("#game").innerHTML=Object.entries(GAMES).map(([k,g])=>`<option value="${k}">${g.name}</option>`).join("");
+$("#game").value=S.game;
+$("#game").onchange=e=>{S.game=e.target.value;save();loadGame()};
+function loadGame(){$("#roster").value=S.roster[S.game]||"";$("#rlist").innerHTML="";["vout","vbtns","cout","cbtns","kout","kbtns"].forEach(i=>$("#"+i).hidden=true);renderLib()}
+$("#kg").value=S.gemini;$("#ky").value=S.youtube;$("#km").value=S.model;
+loadGame();
+</script></body></html>
